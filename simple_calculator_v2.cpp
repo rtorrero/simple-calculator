@@ -24,6 +24,7 @@
 
   Declaration:
     let Name = Expression
+    const Name = Expression
 
   Assignment:
     set Name = Expression
@@ -92,6 +93,12 @@ void print_help()
   cout << "= 1" << endl;
   cout << "set a = 2;" << endl;
   cout << "= 2" << endl;
+  cout << "Constants can be declared:" << endl;
+  cout << "const b = 2;" << endl;
+  cout << "= 2" << endl;
+  cout << "Constants cannot be updated:" << endl;
+  cout << "set b = 3;" << endl;
+  cout <<  "set: cannot update constant b" << endl;
   cout << "To exit the calculator, type 'quit' and press enter." << endl;
 }
 
@@ -121,6 +128,7 @@ class Token_stream
 };
 
 const char let = 'L';
+const char constant = 'C';
 const char set = 'S';
 const char help = 'H';
 const char quit = 'Q';
@@ -171,7 +179,8 @@ Token Token_stream::get()
         s+=ch;
         while(cin.get(ch) && (isalpha(ch) || isdigit(ch))) s+=ch;
         cin.unget();
-        if (s == "let") return Token(let);	
+        if (s == "let") return Token(let);
+        if (s == "const") return Token(constant);
         if (s == "set") return Token(set);
         if (s == "quit") return Token(quit);
         if (s == "help") return Token(help);
@@ -199,7 +208,8 @@ struct Variable
 {
   string name;
   double value;
-  Variable(string n, double v) :name(n), value(v) { }
+  bool is_const;
+  Variable(string n, double v, bool c=false) :name(n), value(v), is_const(c) { }
 };
 
 vector<Variable> names;	
@@ -216,6 +226,7 @@ void set_value(string s, double d)
   for (int i = 0; i<=names.size(); ++i)
     if (names[i].name == s) 
     {
+      if (names[i].is_const) error("set: cannot update constant ",s);
       names[i].value = d;
       return;
     }
@@ -328,7 +339,7 @@ double expression()
   }
 }
 
-double declaration()
+double declaration(bool is_const=false)
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
@@ -341,7 +352,7 @@ double declaration()
   Token t2 = ts.get();
   if (t2.kind != '=') error("= missing in declaration of " ,name);
   double d = expression();
-  names.push_back(Variable(name,d));
+  names.push_back(Variable(name,d,is_const));
   return d;
 }
 
@@ -372,8 +383,11 @@ double statement()
 
   switch(t.kind) 
   {
-    case let:
+    case let:    
       return declaration();
+
+    case constant:
+      return declaration(true);
     
     case set:
       return assignment();
