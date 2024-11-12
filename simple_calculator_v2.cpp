@@ -10,10 +10,14 @@
     Assignment
     Expression
     Print
+    Help
     Quit
 
   Print:
     ;
+
+  Help:
+    help
     
   Quit:
     quit
@@ -68,6 +72,29 @@ inline void error(const string& s)
 
 inline void error(const string& s, const string& s2) { error(s+s2); }
 
+void print_help()
+{
+  #if DEBUG_FUNC
+    cout<<__func__<<std::endl;
+  #endif // DEBUG_FUNC
+
+  cout << "This is a simple calculator." << endl;
+  cout << "It can do addition (+), subtraction (-), multiplication (*), division (/), and modulus (%)." << endl;
+  cout << "Note: All expressions should be terminated with a semicolon." << endl << endl;
+  cout << "Supported syntax:" << endl;
+  cout << "1+2;" << endl;
+  cout << "= 3" << endl;
+  cout << "Longer expressions are supported:" << endl;
+  cout << "1+2*3;" << endl;
+  cout << "1+2*3/4;" << endl;
+  cout << "Variables can be declared and updated:" << endl;
+  cout << "let a = 1;" << endl;
+  cout << "= 1" << endl;
+  cout << "set a = 2;" << endl;
+  cout << "= 2" << endl;
+  cout << "To exit the calculator, type 'quit' and press enter." << endl;
+}
+
 struct Token 
 {
   char kind;
@@ -95,6 +122,7 @@ class Token_stream
 
 const char let = 'L';
 const char set = 'S';
+const char help = 'H';
 const char quit = 'Q';
 const char print = ';';
 const char number = '8';
@@ -146,6 +174,7 @@ Token Token_stream::get()
         if (s == "let") return Token(let);	
         if (s == "set") return Token(set);
         if (s == "quit") return Token(quit);
+        if (s == "help") return Token(help);
         return Token(name,s);
     	}
     	error("Bad token");
@@ -380,6 +409,10 @@ void calculate()
     Token t = ts.get();
     while (t.kind == print) t=ts.get();
     if (t.kind == quit) return;
+    if (t.kind == help) {
+      print_help();
+      continue;
+    }
     ts.unget(t);
 
     auto the_result=statement();
