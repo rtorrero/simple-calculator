@@ -31,8 +31,9 @@
 
   Term:
     Primary
-    Primary * Term 
-    Primary / Term 
+    Primary * Term
+    Primary / Term
+    Primary % Term
 
   Primary:
     Number
@@ -54,6 +55,7 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <cmath>
 
 using namespace std;
 
@@ -114,6 +116,7 @@ Token Token_stream::get()
     case '/':
     case ';':
     case '=': 
+    case '%':
       return Token(ch);
 
     case '.':
@@ -251,10 +254,17 @@ double term()
         left *= primary();
         break;
       case '/':
-        {	
+        {
           double d = primary();
           if (d == 0) error("divide by zero");
           left /= d;
+          break;
+        }
+      case '%':
+        {
+          double d = primary();
+          if (d == 0) error("divide by zero");
+          left = fmod(left, d);
           break;
         }
       default:
