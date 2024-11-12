@@ -88,6 +88,7 @@ class Token_stream
 };
 
 const char let = 'L';
+const char set = 'S';
 const char quit = 'Q';
 const char print = ';';
 const char number = '8';
@@ -136,6 +137,7 @@ Token Token_stream::get()
         while(cin.get(ch) && (isalpha(ch) || isdigit(ch))) s+=ch;
         cin.unget();
         if (s == "let") return Token(let);	
+        if (s == "set") return Token(set);
         if (s == "quit") return Token(quit);
         return Token(name,s);
     	}
@@ -300,6 +302,23 @@ double declaration()
   return d;
 }
 
+double assignment()
+{
+  #if DEBUG_FUNC
+    cout<<__func__<<std::endl;
+  #endif // DEBUG_FUNC
+
+  Token t = ts.get();
+  if (t.kind != name) error ("name expected in assignment");
+  string name = t.name;
+  if (!is_declared(name)) error(name, " undeclared");
+  Token t2 = ts.get();
+  if (t2.kind != '=') error("= missing in declaration of " ,name);
+  double d = expression();
+  set_value(name,d);
+  return d;
+}
+
 double statement()
 {
   #if DEBUG_FUNC
@@ -307,12 +326,14 @@ double statement()
   #endif // DEBUG_FUNC
          
   Token t = ts.get();
-  double d=0;
 
   switch(t.kind) 
   {
     case let:
       return declaration();
+    
+    case set:
+      return assignment();
       
     default:
       ts.unget(t);
