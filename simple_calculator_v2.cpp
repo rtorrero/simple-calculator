@@ -6,7 +6,8 @@
   The gramman for input is:
 
   Statement:
-    Declaration 
+    Declaration
+    Assignment
     Expression
     Print
     Quit
@@ -19,6 +20,9 @@
 
   Declaration:
     let Name = Expression
+
+  Assignment:
+    set Name = Expression
 
   Expression:
     Term
