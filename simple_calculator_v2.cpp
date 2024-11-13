@@ -102,14 +102,17 @@ void print_help()
   cout << "To exit the calculator, type 'quit' and press enter." << endl;
 }
 
+enum class TokenKind {let, constant, set, help, quit, print, number,
+ name, left_paren, right_paren, plus, minus, times, divide, mod, assign};
+
 struct Token 
 {
-  char kind;
+  TokenKind kind;
   double value;
   string name;
-  Token(char ch) :kind(ch), value(0) { }
-  Token(char ch, double val) :kind(ch), value(val) { }
-  Token(char ch, string val) :kind(ch), name(val) { }
+  Token(TokenKind k) :kind(k), value(0) { }
+  Token(TokenKind k, double val) :kind(k), value(val) { }
+  Token(TokenKind k, string val) :kind(k), name(val) { }
 };
 
 class Token_stream 
@@ -121,20 +124,11 @@ class Token_stream
     
   public: 
     
-    Token_stream() :full(false), buffer(0) { } 
+    Token_stream() :full(false), buffer(TokenKind::quit) { } 
     Token get(); 
     void unget(Token t) { buffer=t; full=true; } 
-    void ignore(char);
+    void ignore(TokenKind);
 };
-
-const char let = 'L';
-const char constant = 'C';
-const char set = 'S';
-const char help = 'H';
-const char quit = 'Q';
-const char print = ';';
-const char number = '8';
-const char name = 'a';
 
 Token Token_stream::get()
 {
@@ -144,16 +138,15 @@ Token Token_stream::get()
   do { cin.get(ch); } while(isspace(ch));
   switch (ch) 
   {
-    case '(':
-    case ')':
-    case '+':
-    case '-':
-    case '*':
-    case '/':
-    case ';':
-    case '=': 
-    case '%':
-      return Token(ch);
+    case '(': return Token(TokenKind::left_paren);
+    case ')': return Token(TokenKind::right_paren);
+    case '+': return Token(TokenKind::plus);
+    case '-': return Token(TokenKind::minus);
+    case '*': return Token(TokenKind::times);
+    case '/': return Token(TokenKind::divide);
+    case ';': return Token(TokenKind::print);
+    case '=': return Token(TokenKind::assign);
+    case '%': return Token(TokenKind::mod);
 
     case '.':
     case '0':
@@ -170,7 +163,7 @@ Token Token_stream::get()
       cin.unget();
       double val;
       cin>>val;
-      return Token(number,val);
+      return Token(TokenKind::number,val);
     }
     default:
     	if (isalpha(ch)) 
@@ -179,29 +172,30 @@ Token Token_stream::get()
         s+=ch;
         while(cin.get(ch) && (isalpha(ch) || isdigit(ch))) s+=ch;
         cin.unget();
-        if (s == "let") return Token(let);
-        if (s == "const") return Token(constant);
-        if (s == "set") return Token(set);
-        if (s == "quit") return Token(quit);
-        if (s == "help") return Token(help);
-        return Token(name,s);
+        if (s == "let") return Token(TokenKind::let);
+        if (s == "const") return Token(TokenKind::constant);
+        if (s == "set") return Token(TokenKind::set);
+        if (s == "quit") return Token(TokenKind::quit);
+        if (s == "help") return Token(TokenKind::help);
+        return Token(TokenKind::name,s);
     	}
     	error("Bad token");
   }
 }
 
-void Token_stream::ignore(char c)
+void Token_stream::ignore(TokenKind kind)
 {
-  if (full && c==buffer.kind) 
+  if (full && kind == buffer.kind) 
   {
     full = false;
     return;
   }
   full = false;
 
-  char ch;
-  while (cin>>ch)
-    if (ch==c) return;
+  while (true) {
+      Token t = get();  // This already handles char-to-Token conversion
+      if (t.kind == kind) return;
+  }
 }
 
 struct Variable 
@@ -258,20 +252,20 @@ double primary()
   Token t = ts.get();
   switch (t.kind) 
   {
-    case '(':
+    case TokenKind::left_paren:
     {	
       double d = expression();
       t = ts.get();
-      if (t.kind != ')') error("'(' expected");
+      if (t.kind != TokenKind::right_paren) error("'(' expected");
       return d;
     }
-    case '-':
+    case TokenKind::minus:
       return - primary();
-    case '+':
+    case TokenKind::plus:
       return primary();
-    case number:
+    case TokenKind::number:
       return t.value;
-    case name:
+    case TokenKind::name:
       return get_value(t.name);
     default:
       error("primary expected");
@@ -290,17 +284,17 @@ double term()
     Token t = ts.get();
     switch(t.kind) 
     {
-      case '*':
+      case TokenKind::times:
         left *= primary();
         break;
-      case '/':
+      case TokenKind::divide:
         {
           double d = primary();
           if (d == 0) error("divide by zero");
           left /= d;
           break;
         }
-      case '%':
+      case TokenKind::mod:
         {
           double d = primary();
           if (d == 0) error("divide by zero");
@@ -326,10 +320,10 @@ double expression()
     Token t = ts.get();
     switch(t.kind) 
     {
-      case '+':
+      case TokenKind::plus:
         left += term();
         break;
-      case '-':
+      case TokenKind::minus:
         left -= term();
         break;
       default:
@@ -346,11 +340,11 @@ double declaration(bool is_const=false)
   #endif // DEBUG_FUNC
          
   Token t = ts.get();
-  if (t.kind != name) error ("name expected in declaration");
+  if (t.kind != TokenKind::name) error ("name expected in declaration");
   string name = t.name;
   if (is_declared(name)) error(name, " declared twice");
   Token t2 = ts.get();
-  if (t2.kind != '=') error("= missing in declaration of " ,name);
+  if (t2.kind != TokenKind::assign) error("= missing in declaration of " ,name);
   double d = expression();
   names.push_back(Variable(name,d,is_const));
   return d;
@@ -363,11 +357,11 @@ double assignment()
   #endif // DEBUG_FUNC
 
   Token t = ts.get();
-  if (t.kind != name) error ("name expected in assignment");
+  if (t.kind != TokenKind::name) error ("name expected in assignment");
   string name = t.name;
   if (!is_declared(name)) error(name, " undeclared");
   Token t2 = ts.get();
-  if (t2.kind != '=') error("= missing in declaration of " ,name);
+  if (t2.kind != TokenKind::assign) error("= missing in declaration of " ,name);
   double d = expression();
   set_value(name,d);
   return d;
@@ -383,13 +377,13 @@ double statement()
 
   switch(t.kind) 
   {
-    case let:    
+    case TokenKind::let:    
       return declaration();
 
-    case constant:
+    case TokenKind::constant:
       return declaration(true);
     
-    case set:
+    case TokenKind::set:
       return assignment();
       
     default:
@@ -404,7 +398,7 @@ void clean_up_mess()
     cout<<__func__<<std::endl;
   #endif // DEBUG_FUNC
          
-	ts.ignore(print);
+	ts.ignore(TokenKind::print);
 }
 
 const string prompt = "> ";
@@ -421,9 +415,9 @@ void calculate()
   {
     cout << prompt;
     Token t = ts.get();
-    while (t.kind == print) t=ts.get();
-    if (t.kind == quit) return;
-    if (t.kind == help) {
+    while (t.kind == TokenKind::print) t=ts.get();
+    if (t.kind == TokenKind::quit) return;
+    if (t.kind == TokenKind::help) {
       print_help();
       continue;
     }
