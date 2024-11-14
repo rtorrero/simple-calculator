@@ -59,7 +59,7 @@
 #include <iostream>
 #include <string>
 #include <stdexcept>
-#include <vector>
+#include <map>
 #include <cmath>
 
 using namespace std;
@@ -199,44 +199,44 @@ void Token_stream::ignore(TokenKind kind)
 }
 
 struct Variable 
-{
-  string name;
+{  
   double value;
   bool is_const;
-  Variable(string n, double v, bool c=false) :name(n), value(v), is_const(c) { }
+  Variable() :value(0), is_const(false) { }
+  Variable(double v, bool c=false) :value(v), is_const(c) { }
 };
 
-vector<Variable> names;	
+map<string, Variable> names;
 
 double get_value(string s)
 {
-  for (int i = 0; i<names.size(); ++i)
-    if (names[i].name == s) return names[i].value;
-  error("get: undefined name ",s);
+    auto it = names.find(s);
+    if (it == names.end()) {
+        error("get: undefined name ", s);
+    }
+    return it->second.value;
 }
 
+// set_value assumes the key exists
 void set_value(string s, double d)
 {
-  for (int i = 0; i<=names.size(); ++i)
-    if (names[i].name == s) 
-    {
-      if (names[i].is_const) error("set: cannot update constant ",s);
-      names[i].value = d;
-      return;
-    }
-  error("set: undefined name ",s);
+  Variable& var = names.at(s);
+  if (var.is_const) {
+    error("set: cannot update constant ", s);
+  }
+  var.value = d;
 }
+
 
 bool is_declared(string s)
 {
-  for (int i = 0; i<names.size(); ++i)
-    if (names[i].name == s) return true;
-  return false;
+  return names.contains(s); // C++20
 }
 
-void define_name(string s, double d)
+// define_name will overwrite a variable if it already exists
+void define_name(string s, double d, bool is_const)
 {
-  names.push_back(Variable(s,d));
+  names[s] = Variable(d, is_const);
 }
 
 Token_stream ts;
@@ -346,7 +346,7 @@ double declaration(bool is_const=false)
   Token t2 = ts.get();
   if (t2.kind != TokenKind::assign) error("= missing in declaration of " ,name);
   double d = expression();
-  names.push_back(Variable(name,d,is_const));
+  define_name(name,d,is_const);
   return d;
 }
 
