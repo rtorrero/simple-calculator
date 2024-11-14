@@ -41,11 +41,28 @@
     Primary % Term
 
   Primary:
+    Function
     Number
     Name
     ( Expression )
     - Primary
     + Primary
+
+  Function:
+    FunctionName ( Expression )
+    pow ( Expression , Expression )
+  
+  FunctionName :
+    sin
+    cos
+    tan
+    asin
+    acos
+    atan
+    exp
+    ln
+    log10
+    log2
 
   Number:
     floating-point-literal
@@ -60,6 +77,8 @@
 #include <string>
 #include <stdexcept>
 #include <map>
+#include <unordered_map>
+#include <functional>
 #include <cmath>
 
 using namespace std;
@@ -98,12 +117,43 @@ void print_help()
   cout << "= 2" << endl;
   cout << "Constants cannot be updated:" << endl;
   cout << "set b = 3;" << endl;
-  cout <<  "set: cannot update constant b" << endl;
+  cout << "set: cannot update constant b" << endl;
+  cout << "Trigonometric functions supported:" << endl;
+  cout << "sin(x) - sine of x (x in radians)" << endl;
+  cout << "cos(x) - cosine of x (x in radians)" << endl;
+  cout << "tan(x) - tangent of x (x in radians)" << endl;
+  cout << "asin(x) - arcsine of x (result in radians)" << endl;
+  cout << "acos(x) - arccosine of x (result in radians)" << endl;
+  cout << "atan(x) - arctangent of x (result in radians)" << endl;
+  cout << "exp(x) - e^x" << endl;
+  cout << "ln(x) - natural logarithm of x" << endl;
+  cout << "log10(x) - base 10 logarithm of x" << endl;
+  cout << "log2(x) - base 2 logarithm of x" << endl;
+  cout << "pow(x, y) - x raised to the power of y" << endl;
   cout << "To exit the calculator, type 'quit' and press enter." << endl;
 }
 
 enum class TokenKind {let, constant, set, help, quit, print, number,
- name, left_paren, right_paren, plus, minus, times, divide, mod, assign};
+ name, left_paren, right_paren, plus, minus, times, divide, mod, assign, comma, unary_math_func, binary_math_func};
+
+// Mapping of math functions that use a single argument
+std::unordered_map<std::string, std::function<double(double)>> unary_funcs = {
+    {"sin", static_cast<double(*)(double)>(std::sin)},
+    {"cos", static_cast<double(*)(double)>(std::cos)},
+    {"tan", static_cast<double(*)(double)>(std::tan)},
+    {"asin", static_cast<double(*)(double)>(std::asin)},
+    {"acos", static_cast<double(*)(double)>(std::acos)},
+    {"atan", static_cast<double(*)(double)>(std::atan)},
+    {"exp", static_cast<double(*)(double)>(std::exp)},
+    {"ln", static_cast<double(*)(double)>(std::log)},
+    {"log2", static_cast<double(*)(double)>(std::log2)},
+    {"log10", static_cast<double(*)(double)>(std::log10)},
+};
+
+// Mapping of math functions that use two arguments
+std::unordered_map<std::string, std::function<double(double, double)>> binary_funcs = {
+    {"pow", [](double x, double y) { return std::pow(x, y); }}
+};
 
 struct Token 
 {
@@ -147,6 +197,7 @@ Token Token_stream::get()
     case ';': return Token(TokenKind::print);
     case '=': return Token(TokenKind::assign);
     case '%': return Token(TokenKind::mod);
+    case ',': return Token(TokenKind::comma);
 
     case '.':
     case '0':
@@ -177,6 +228,8 @@ Token Token_stream::get()
         if (s == "set") return Token(TokenKind::set);
         if (s == "quit") return Token(TokenKind::quit);
         if (s == "help") return Token(TokenKind::help);
+        if (unary_funcs.contains(s)) return Token(TokenKind::unary_math_func, s);
+        if (binary_funcs.contains(s)) return Token(TokenKind::binary_math_func, s);
         return Token(TokenKind::name,s);
     	}
     	error("Bad token");
@@ -267,6 +320,41 @@ double primary()
       return t.value;
     case TokenKind::name:
       return get_value(t.name);
+    case TokenKind::unary_math_func:
+        {
+          Token next = ts.get();
+          next = ts.get();
+          if (next.kind != TokenKind::left_paren) 
+              error("'(' expected after function name");
+          
+          double arg = expression();
+          
+          t = ts.get();
+          if (next.kind != TokenKind::right_paren) 
+              error("')' expected");
+          
+          return unary_funcs.at(t.name)(arg);
+        }
+    case TokenKind::binary_math_func:
+        {
+          Token next = ts.get();
+          if (next.kind != TokenKind::left_paren) 
+              error("'(' expected after function name");
+          
+          double arg1 = expression();
+          
+          next = ts.get();
+          if (next.kind != TokenKind::comma) 
+              error("',' expected between arguments");
+              
+          double arg2 = expression();
+          
+          next = ts.get();
+          if (next.kind != TokenKind::right_paren) 
+              error("')' expected");
+          
+          return binary_funcs.at(t.name)(arg1, arg2);
+        }              
     default:
       error("primary expected");
   }
