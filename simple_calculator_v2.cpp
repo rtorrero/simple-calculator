@@ -3,24 +3,38 @@
 
   This program implements a basic expression calculator.
   Input from cin, output from cout.
-  The gramman for input is:
+  The grammar for input is:
 
-  Statement:
-    Declaration
-    Assignment
-    Expression
-    Print
+  Command:
     Help
+    Save
+    Load
+    Show
     Quit
 
-  Print:
-    ;
+  Save:
+    save Name
+
+  Load:
+    load Name
+
+  Show:
+    show Name
 
   Help:
     help
     
   Quit:
     quit
+
+  Statement:
+    Declaration
+    Assignment
+    Expression
+    Print
+
+  Print:
+    ;
 
   Declaration:
     let Name = Expression
@@ -74,6 +88,7 @@
 */
 
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <stdexcept>
 #include <map>
@@ -103,22 +118,22 @@ void print_help()
   cout << "Note: All expressions should be terminated with a semicolon." << endl << endl;
   cout << "Supported syntax:" << endl;
   cout << "1+2;" << endl;
-  cout << "= 3" << endl;
+  cout << "= 3" << endl << endl;
   cout << "Longer expressions are supported:" << endl;
   cout << "1+2*3;" << endl;
-  cout << "1+2*3/4;" << endl;
+  cout << "1+2*3/4;" << endl << endl;
   cout << "Variables can be declared and updated:" << endl;
   cout << "let a = 1;" << endl;
   cout << "= 1" << endl;
   cout << "set a = 2;" << endl;
-  cout << "= 2" << endl;
+  cout << "= 2" << endl << endl;
   cout << "Constants can be declared:" << endl;
   cout << "const b = 2;" << endl;
-  cout << "= 2" << endl;
+  cout << "= 2" << endl << endl;
   cout << "Constants cannot be updated:" << endl;
   cout << "set b = 3;" << endl;
-  cout << "set: cannot update constant b" << endl;
-  cout << "Trigonometric functions supported:" << endl;
+  cout << "set: cannot update constant b" << endl << endl;
+  cout << "Trigonometric and other math functions supported:" << endl;
   cout << "sin(x) - sine of x (x in radians)" << endl;
   cout << "cos(x) - cosine of x (x in radians)" << endl;
   cout << "tan(x) - tangent of x (x in radians)" << endl;
@@ -129,12 +144,19 @@ void print_help()
   cout << "ln(x) - natural logarithm of x" << endl;
   cout << "log10(x) - base 10 logarithm of x" << endl;
   cout << "log2(x) - base 2 logarithm of x" << endl;
-  cout << "pow(x, y) - x raised to the power of y" << endl;
+  cout << "pow(x, y) - x raised to the power of y" << endl << endl;
+  cout << "Environment management:" << endl;
+  cout << "save myenv; - saves all variables to file 'myenv'" << endl;
+  cout << "load myenv; - loads all variables from file 'myenv'" << endl;
+  cout << "show myenv; - displays all variables stored in file 'myenv'" << endl << endl;
   cout << "To exit the calculator, type 'quit' and press enter." << endl;
 }
 
-enum class TokenKind {let, constant, set, help, quit, print, number,
- name, left_paren, right_paren, plus, minus, times, divide, mod, assign, comma, unary_math_func, binary_math_func};
+enum class TokenKind {
+  let, constant, set, help, quit, print, number, name, save, load, show,
+  left_paren, right_paren, plus, minus, times, divide, mod, assign,
+  comma, unary_math_func, binary_math_func
+};
 
 // Mapping of math functions that use a single argument
 std::unordered_map<std::string, std::function<double(double)>> unary_funcs = {
@@ -228,6 +250,9 @@ Token Token_stream::get()
         if (s == "set") return Token(TokenKind::set);
         if (s == "quit") return Token(TokenKind::quit);
         if (s == "help") return Token(TokenKind::help);
+        if (s == "save") return Token(TokenKind::save);
+        if (s == "load") return Token(TokenKind::load);
+        if (s == "show") return Token(TokenKind::show);
         if (unary_funcs.contains(s)) return Token(TokenKind::unary_math_func, s);
         if (binary_funcs.contains(s)) return Token(TokenKind::binary_math_func, s);
         return Token(TokenKind::name,s);
@@ -455,6 +480,78 @@ double assignment()
   return d;
 }
 
+// It wasn't entirely clear if env was a name for a particular env-file or a subcommand
+// In this implementation we have assumed it's a name.
+void save_state()
+{
+  #if DEBUG_FUNC
+    cout<<__func__<<std::endl;
+  #endif // DEBUG_FUNC
+
+  Token t = ts.get();
+  if (t.kind != TokenKind::name) error ("env filename expected");
+  string name = t.name;
+  ofstream file(name);
+  
+  for(const auto& [var_name, var] : names) {
+    file << var_name << " " << var.value << " " << var.is_const << "\n";
+  }
+  
+  file.close();
+}
+
+void load_state()
+{
+  #if DEBUG_FUNC
+    cout<<__func__<<std::endl;
+  #endif // DEBUG_FUNC
+
+  Token t = ts.get();
+  if (t.kind != TokenKind::name) error ("env filename expected");
+  string name = t.name;
+  ifstream file(name);
+  
+  if (!file) error("cannot open file ", name);
+  
+  string var_name;
+  double value;
+  bool is_const;
+  
+  while (file >> var_name >> value >> is_const) {
+    define_name(var_name, value, is_const);
+  }
+  
+  file.close();
+}
+
+void show_state()
+{
+  #if DEBUG_FUNC
+    cout<<__func__<<std::endl;
+  #endif // DEBUG_FUNC
+
+  Token t = ts.get();
+  if (t.kind != TokenKind::name) error ("env filename expected");
+  string name = t.name;
+  ifstream file(name);
+  
+  if (!file) error("cannot open file ", name);
+  
+  string var_name;
+  double value;
+  bool is_const;
+  
+  cout << "Variables in environment '" << name << "':\n";
+  cout << "----------------------------------------\n";
+  while (file >> var_name >> value >> is_const) {
+    cout << (is_const ? "const " : "let ") << var_name 
+         << " = " << value << "\n";
+  }
+  cout << "----------------------------------------\n";
+  
+  file.close();
+}
+
 double statement()
 {
   #if DEBUG_FUNC
@@ -504,6 +601,19 @@ void calculate()
     cout << prompt;
     Token t = ts.get();
     while (t.kind == TokenKind::print) t=ts.get();
+
+    if (t.kind == TokenKind::save) {
+      save_state();
+      continue;
+    }
+    if (t.kind == TokenKind::show) {
+      show_state();
+      continue;
+    }
+    if (t.kind == TokenKind::load) {
+      load_state();
+      continue;
+    }
     if (t.kind == TokenKind::quit) return;
     if (t.kind == TokenKind::help) {
       print_help();
@@ -527,7 +637,7 @@ try
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
   #endif // DEBUG_FUNC
-         
+
   calculate();
   return 0;
 }
