@@ -102,9 +102,60 @@ using namespace std;
 
 #define DEBUG_FUNC false
 
+class Result {
+    enum class Type { SCALAR, MATRIX, VECTOR };
+    Type type;
+    double scalar_value;
+    mat_lib::matrix<double> matrix_value;
+    mat_lib::vector<double> vector_value;
+
+public:
+    Result(double d) : type(Type::SCALAR), scalar_value(d) {}
+    Result(mat_lib::matrix<double> m) : type(Type::MATRIX), matrix_value(m) {}
+    Result(mat_lib::vector<double> v) : type(Type::VECTOR), vector_value(v) {}
+
+    double as_scalar() const { 
+        if (type != Type::SCALAR) error("Expected scalar value");
+        return scalar_value;
+    }
+    mat_lib::matrix<double> as_matrix() const {
+      if (type != Type::MATRIX) error("Expected matrix value");
+      return matrix_value;
+    }
+
+    mat_lib::vector<double> as_vector() const {
+        if (type != Type::VECTOR) error("Expected vector value");
+        return vector_value;
+    }
+
+    Type type() const { return type; }
+};
+
+ostream& operator<<(ostream& os, const Result& r) {
+    switch(r.type) {
+        case Result::Type::SCALAR: os << r.scalar_value; break;
+        case Result::Type::MATRIX: os << r.matrix_value; break;
+        case Result::Type::VECTOR: os << r.vector_value; break;
+    }
+    return os;
+}
+
+Result operator+(const Result& other) const;
+Result operator-(const Result& other) const;
+Result operator*(const Result& other) const;
+Result operator/(const Result& other) const;
+
 inline void error(const string &s) { throw runtime_error(s); }
 
 inline void error(const string &s, const string &s2) { error(s + s2); }
+
+void define_matrix(string s, const mat_lib::matrix<double>& m, bool is_const) {
+    names[s] = Variable(m, is_const);
+}
+
+void define_vector(string s, const mat_lib::vector<double>& v, bool is_const) {
+    names[s] = Variable(v, is_const);
+}
 
 void print_help() {
 #if DEBUG_FUNC
@@ -262,6 +313,16 @@ Token Token_stream::get() {
     return Token(TokenKind::mod);
   case ',':
     return Token(TokenKind::comma);
+  case '[': 
+    return Token(TokenKind::left_bracket);
+  case ']':
+    return Token(TokenKind::right_bracket);
+  case '{':
+    return Token(TokenKind::left_brace);
+  case '}':
+    return Token(TokenKind::right_brace);
+  case '~':
+    return Token(TokenKind::transpose);
 
   case '.':
   case '0':
@@ -373,13 +434,13 @@ void define_name(string s, double d, bool is_const) {
 
 Token_stream ts;
 
-double expression();
+Result expression();
 mat_lib::matrix<double> handle_matrix_operation();
 mat_lib::vector<double> handle_vector_operation();
 mat_lib::matrix<double> parse_matrix();
 mat_lib::vector<double> parse_vector();
 
-double primary() {
+Result primary() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
@@ -407,7 +468,7 @@ double primary() {
     if (next.kind != TokenKind::left_paren)
       error("'(' expected after function name");
 
-    double arg = expression();
+    Result arg = expression();
 
     t = ts.get();
     if (next.kind != TokenKind::right_paren)
@@ -443,12 +504,12 @@ double primary() {
   }
 }
 
-double term() {
+Result term() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  double left = primary();
+  Result left = primary();
   while (true) {
     Token t = ts.get();
     switch (t.kind) {
@@ -456,14 +517,14 @@ double term() {
       left *= primary();
       break;
     case TokenKind::divide: {
-      double d = primary();
+      Result d = primary();
       if (d == 0)
         error("divide by zero");
       left /= d;
       break;
     }
     case TokenKind::mod: {
-      double d = primary();
+      Result d = primary();
       if (d == 0)
         error("divide by zero");
       left = fmod(left, d);
@@ -476,12 +537,12 @@ double term() {
   }
 }
 
-double expression() {
+Result expression() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  double left = term();
+  Result left = term();
   while (true) {
     Token t = ts.get();
     switch (t.kind) {
@@ -498,42 +559,69 @@ double expression() {
   }
 }
 
-double declaration(bool is_const = false) {
+Result declaration(bool is_const = false) {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  Token t = ts.get();
-  if (t.kind != TokenKind::name)
-    error("name expected in declaration");
-  string name = t.name;
-  if (is_declared(name))
-    error(name, " declared twice");
-  Token t2 = ts.get();
-  if (t2.kind != TokenKind::assign)
-    error("= missing in declaration of ", name);
-  double d = expression();
-  define_name(name, d, is_const);
-  return d;
+    Token t = ts.get();
+    if (t.kind != TokenKind::name) error("name expected in declaration");
+    string name = t.name;
+    if (is_declared(name)) error(name, " declared twice");
+    
+    Token t2 = ts.get();
+    if (t2.kind != TokenKind::assign) error("= missing in declaration of ", name);
+    
+    Result r = expression();
+    
+    // Store in symbol table based on result type
+    switch(r.type()) {
+        case Result::Type::SCALAR:
+            define_name(name, r.as_scalar(), is_const);
+            break;
+        case Result::Type::MATRIX:
+            define_matrix(name, r.as_matrix(), is_const);
+            break;
+        case Result::Type::VECTOR:
+            define_vector(name, r.as_vector(), is_const);
+            break;
+    }
+    
+    return r;
 }
 
-double assignment() {
+Result assignment() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  Token t = ts.get();
-  if (t.kind != TokenKind::name)
-    error("name expected in assignment");
-  string name = t.name;
-  if (!is_declared(name))
-    error(name, " undeclared");
-  Token t2 = ts.get();
-  if (t2.kind != TokenKind::assign)
-    error("= missing in declaration of ", name);
-  double d = expression();
-  set_value(name, d);
-  return d;
+    Token t = ts.get();
+    if (t.kind != TokenKind::name) error("name expected in assignment");
+    string name = t.name;
+    if (!is_declared(name)) error(name, " undeclared");
+    
+    Token t2 = ts.get();
+    if (t2.kind != TokenKind::assign) error("= missing in declaration of ", name);
+    
+    Result r = expression();
+    
+    // Handle different types of assignments based on Result type
+    Variable& var = names.at(name);
+    if (var.is_const) error("set: cannot update constant ", name);
+    
+    switch(r.type()) {
+        case Result::Type::SCALAR:
+            var.value = r.as_scalar();
+            break;
+        case Result::Type::MATRIX:
+            var.matrix_value = r.as_matrix();
+            break;
+        case Result::Type::VECTOR:
+            var.vector_value = r.as_vector();
+            break;
+    }
+    
+    return r;
 }
 
 // It wasn't entirely clear if env was a name for a particular env-file or a
@@ -674,7 +762,7 @@ mat_lib::vector<double> parse_vector() {
     return mat_lib::vector<double>(elements);
 }
 
-double statement() {
+Result statement() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
