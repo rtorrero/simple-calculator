@@ -1,5 +1,5 @@
 /*
-        advanced_calculator.cpp - Simple calculator (second version)
+        simple_calculator_v2.cpp - Simple calculator (second version)
 
   This program implements a basic expression calculator.
   Input from cin, output from cout.
@@ -102,60 +102,9 @@ using namespace std;
 
 #define DEBUG_FUNC false
 
-class Result {
-    enum class Type { SCALAR, MATRIX, VECTOR };
-    Type type;
-    double scalar_value;
-    mat_lib::matrix<double> matrix_value;
-    mat_lib::vector<double> vector_value;
-
-public:
-    Result(double d) : type(Type::SCALAR), scalar_value(d) {}
-    Result(mat_lib::matrix<double> m) : type(Type::MATRIX), matrix_value(m) {}
-    Result(mat_lib::vector<double> v) : type(Type::VECTOR), vector_value(v) {}
-
-    double as_scalar() const { 
-        if (type != Type::SCALAR) error("Expected scalar value");
-        return scalar_value;
-    }
-    mat_lib::matrix<double> as_matrix() const {
-      if (type != Type::MATRIX) error("Expected matrix value");
-      return matrix_value;
-    }
-
-    mat_lib::vector<double> as_vector() const {
-        if (type != Type::VECTOR) error("Expected vector value");
-        return vector_value;
-    }
-
-    Type type() const { return type; }
-};
-
-ostream& operator<<(ostream& os, const Result& r) {
-    switch(r.type) {
-        case Result::Type::SCALAR: os << r.scalar_value; break;
-        case Result::Type::MATRIX: os << r.matrix_value; break;
-        case Result::Type::VECTOR: os << r.vector_value; break;
-    }
-    return os;
-}
-
-Result operator+(const Result& other) const;
-Result operator-(const Result& other) const;
-Result operator*(const Result& other) const;
-Result operator/(const Result& other) const;
-
 inline void error(const string &s) { throw runtime_error(s); }
 
 inline void error(const string &s, const string &s2) { error(s + s2); }
-
-void define_matrix(string s, const mat_lib::matrix<double>& m, bool is_const) {
-    names[s] = Variable(m, is_const);
-}
-
-void define_vector(string s, const mat_lib::vector<double>& v, bool is_const) {
-    names[s] = Variable(v, is_const);
-}
 
 void print_help() {
 #if DEBUG_FUNC
@@ -228,15 +177,10 @@ enum class TokenKind {
   comma,
   unary_math_func,
   binary_math_func,
-  matrix_decl,
-  vector_decl,
-  matrix_op,
-  vector_op,
-  left_bracket,
-  right_bracket,
-  left_brace,
-  right_brace,
-  x,
+  vector_start,
+  vector_end,
+  matrix_start,
+  matrix_end,
   transpose
 };
 
@@ -262,9 +206,20 @@ struct Token {
   TokenKind kind;
   double value;
   string name;
-  Token(TokenKind k) : kind(k), value(0) {}
-  Token(TokenKind k, double val) : kind(k), value(val) {}
-  Token(TokenKind k, string val) : kind(k), name(val) {}
+  mat_lib::vector<double> vec_value;
+  mat_lib::matrix<double> mat_value;
+  bool is_vector;
+  bool is_matrix;
+
+  Token(TokenKind k) : kind(k), value(0), is_vector(false), is_matrix(false) {}
+  Token(TokenKind k, double val)
+      : kind(k), value(val), is_vector(false), is_matrix(false) {}
+  Token(TokenKind k, string val)
+      : kind(k), name(val), is_vector(false), is_matrix(false) {}
+  Token(TokenKind k, mat_lib::vector<double> vec)
+      : kind(k), vec_value(vec), is_vector(true), is_matrix(false) {}
+  Token(TokenKind k, mat_lib::matrix<double> mat)
+      : kind(k), mat_value(mat), is_vector(false), is_matrix(true) {}
 };
 
 class Token_stream {
@@ -293,6 +248,24 @@ Token Token_stream::get() {
     cin.get(ch);
   } while (isspace(ch));
   switch (ch) {
+  case '[': {
+    char next = cin.get();
+    if (next == '[') {
+      return Token(TokenKind::matrix_start);
+    }
+    cin.unget();
+    return Token(TokenKind::vector_start);
+  }
+  case ']': {
+    char next = cin.get();
+    if (next == ']') {
+      return Token(TokenKind::matrix_end);
+    }
+    cin.unget();
+    return Token(TokenKind::vector_end);
+  }
+  case '~':
+    return Token(TokenKind::transpose);
   case '(':
     return Token(TokenKind::left_paren);
   case ')':
@@ -313,16 +286,6 @@ Token Token_stream::get() {
     return Token(TokenKind::mod);
   case ',':
     return Token(TokenKind::comma);
-  case '[': 
-    return Token(TokenKind::left_bracket);
-  case ']':
-    return Token(TokenKind::right_bracket);
-  case '{':
-    return Token(TokenKind::left_brace);
-  case '}':
-    return Token(TokenKind::right_brace);
-  case '~':
-    return Token(TokenKind::transpose);
 
   case '.':
   case '0':
@@ -373,6 +336,47 @@ Token Token_stream::get() {
   }
 }
 
+mat_lib::vector<double> parse_vector() {
+  vector<double> values;
+  Token t = ts.get();
+  while (t.kind != TokenKind::vector_end) {
+    if (t.kind == TokenKind::number) {
+      values.push_back(t.value);
+    }
+    t = ts.get();
+    if (t.kind != TokenKind::comma && t.kind != TokenKind::vector_end) {
+      error("Expected ',' or ']' in vector");
+    }
+  }
+  return mat_lib::vector<double>(values);
+}
+
+mat_lib::matrix<double> parse_matrix() {
+  vector<vector<double>> rows;
+  Token t = ts.get();
+  while (t.kind != TokenKind::matrix_end) {
+    if (t.kind == TokenKind::vector_start) {
+      vector<double> row;
+      t = ts.get();
+      while (t.kind != TokenKind::vector_end) {
+        if (t.kind == TokenKind::number) {
+          row.push_back(t.value);
+        }
+        t = ts.get();
+        if (t.kind != TokenKind::comma && t.kind != TokenKind::vector_end) {
+          error("Expected ',' or ']' in matrix row");
+        }
+      }
+      rows.push_back(row);
+    }
+    t = ts.get();
+    if (t.kind != TokenKind::comma && t.kind != TokenKind::matrix_end) {
+      error("Expected ',' or ']]' in matrix");
+    }
+  }
+  return mat_lib::matrix<double>(rows);
+}
+
 void Token_stream::ignore(TokenKind kind) {
   if (full && kind == buffer.kind) {
     full = false;
@@ -388,20 +392,21 @@ void Token_stream::ignore(TokenKind kind) {
 }
 
 struct Variable {
-  enum class Type { SCALAR, MATRIX, VECTOR };
-  Type type;
-  double value;
-  mat_lib::matrix<double> matrix_value;
-  mat_lib::vector<double> vector_value;
+  double scalar_value;
+  mat_lib::vector<double> vec_value;
+  mat_lib::matrix<double> mat_value;
   bool is_const;
+  bool is_vector;
+  bool is_matrix;
 
-  Variable() : type(Type::SCALAR), value(0), is_const(false) {}
+  Variable()
+      : scalar_value(0), is_const(false), is_vector(false), is_matrix(false) {}
   Variable(double v, bool c = false)
-      : type(Type::SCALAR), value(v), is_const(c) {}
-  Variable(const mat_lib::matrix<double> &m, bool c = false)
-      : type(Type::MATRIX), matrix_value(m), is_const(c) {}
-  Variable(const mat_lib::vector<double> &v, bool c = false)
-      : type(Type::VECTOR), vector_value(v), is_const(c) {}
+      : scalar_value(v), is_const(c), is_vector(false), is_matrix(false) {}
+  Variable(mat_lib::vector<double> v, bool c = false)
+      : vec_value(v), is_const(c), is_vector(true), is_matrix(false) {}
+  Variable(mat_lib::matrix<double> m, bool c = false)
+      : mat_value(m), is_const(c), is_vector(false), is_matrix(true) {}
 };
 
 map<string, Variable> names;
@@ -428,25 +433,38 @@ bool is_declared(string s) {
 }
 
 // define_name will overwrite a variable if it already exists
-void define_name(string s, double d, bool is_const) {
-  names[s] = Variable(d, is_const);
+void define_name(string s, Token t, bool is_const) {
+  if (t.is_vector) {
+    names[s] = Variable(t.vec_value, is_const);
+  } else if (t.is_matrix) {
+    names[s] = Variable(t.mat_value, is_const);
+  } else {
+    names[s] = Variable(t.value, is_const);
+  }
 }
 
 Token_stream ts;
 
-Result expression();
-mat_lib::matrix<double> handle_matrix_operation();
-mat_lib::vector<double> handle_vector_operation();
-mat_lib::matrix<double> parse_matrix();
-mat_lib::vector<double> parse_vector();
+double expression();
 
-Result primary() {
+double primary() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
   Token t = ts.get();
   switch (t.kind) {
+  case TokenKind::vector_start:
+    return Token(TokenKind::vector, parse_vector());
+  case TokenKind::matrix_start:
+    return Token(TokenKind::matrix, parse_matrix());
+  case TokenKind::transpose: {
+    Token operand = primary();
+    if (operand.is_matrix) {
+      return Token(TokenKind::matrix, operand.mat_value.make_transpose());
+    }
+    error("Transpose operator requires matrix operand");
+  }
   case TokenKind::left_paren: {
     double d = expression();
     t = ts.get();
@@ -468,7 +486,7 @@ Result primary() {
     if (next.kind != TokenKind::left_paren)
       error("'(' expected after function name");
 
-    Result arg = expression();
+    double arg = expression();
 
     t = ts.get();
     if (next.kind != TokenKind::right_paren)
@@ -495,40 +513,97 @@ Result primary() {
 
     return binary_funcs.at(t.name)(arg1, arg2);
   }
-  case TokenKind::matrix_op:
-    return handle_matrix_operation();
-  case TokenKind::vector_op:
-    return handle_vector_operation();
   default:
     error("primary expected");
   }
 }
 
-Result term() {
+Token term() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  Result left = primary();
+  Token left = primary();
   while (true) {
     Token t = ts.get();
     switch (t.kind) {
-    case TokenKind::times:
-      left *= primary();
-      break;
+    case TokenKind::times: {
+      Token right = primary();
+      // Matrix * Matrix
+      if (left.is_matrix && right.is_matrix) {
+        left.mat_value = left.mat_value * right.mat_value;
+        continue;
+      }
+      // Matrix * Vector
+      if (left.is_matrix && right.is_vector) {
+        left.vec_value = left.mat_value * right.vec_value;
+        left.is_matrix = false;
+        left.is_vector = true;
+        continue;
+      }
+      // Vector * Matrix
+      if (left.is_vector && right.is_matrix) {
+        left.vec_value = left.vec_value * right.mat_value;
+        continue;
+      }
+      // Vector * Scalar or Scalar * Vector
+      if (left.is_vector && !right.is_vector && !right.is_matrix) {
+        left.vec_value = left.vec_value * right.value;
+        continue;
+      }
+      if (!left.is_vector && !left.is_matrix && right.is_vector) {
+        left.vec_value = right.vec_value * left.value;
+        left.is_vector = true;
+        continue;
+      }
+      // Matrix * Scalar or Scalar * Matrix
+      if (left.is_matrix && !right.is_vector && !right.is_matrix) {
+        left.mat_value = left.mat_value * right.value;
+        continue;
+      }
+      if (!left.is_vector && !left.is_matrix && right.is_matrix) {
+        left.mat_value = right.mat_value * left.value;
+        left.is_matrix = true;
+        continue;
+      }
+      // Regular scalar multiplication
+      if (!left.is_vector && !left.is_matrix && !right.is_vector &&
+          !right.is_matrix) {
+        left.value *= right.value;
+        continue;
+      }
+      error("Invalid multiplication operands");
+    }
     case TokenKind::divide: {
-      Result d = primary();
-      if (d == 0)
+      Token right = primary();
+      if (right.is_vector || right.is_matrix) {
+        error("Cannot divide by vector or matrix");
+      }
+      if (right.value == 0) {
         error("divide by zero");
-      left /= d;
-      break;
+      }
+      if (left.is_vector) {
+        left.vec_value = left.vec_value / right.value;
+      } else if (left.is_matrix) {
+        left.mat_value = left.mat_value / right.value;
+      } else {
+        left.value /= right.value;
+      }
+      continue;
     }
     case TokenKind::mod: {
-      Result d = primary();
-      if (d == 0)
+      if (left.is_vector || left.is_matrix) {
+        error("Modulo operation not defined for vectors or matrices");
+      }
+      Token right = primary();
+      if (right.is_vector || right.is_matrix) {
+        error("Modulo operation not defined for vectors or matrices");
+      }
+      if (right.value == 0) {
         error("divide by zero");
-      left = fmod(left, d);
-      break;
+      }
+      left.value = fmod(left.value, right.value);
+      continue;
     }
     default:
       ts.unget(t);
@@ -537,21 +612,44 @@ Result term() {
   }
 }
 
-Result expression() {
+Token expression() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-  Result left = term();
+  Token left = term();
   while (true) {
     Token t = ts.get();
     switch (t.kind) {
-    case TokenKind::plus:
-      left += term();
+    case TokenKind::plus: {
+      Token right = term();
+      if (left.is_vector && right.is_vector) {
+        left.vec_value += right.vec_value;
+      } else if (left.is_matrix && right.is_matrix) {
+        left.mat_value += right.mat_value;
+      } else if (!left.is_vector && !left.is_matrix && !right.is_vector &&
+                 !right.is_matrix) {
+        left.value += right.value;
+      } else {
+        error("Invalid addition operands");
+      }
       break;
-    case TokenKind::minus:
-      left -= term();
+    }
+    case TokenKind::minus: {
+      // Similar to plus case
+      Token right = term();
+      if (left.is_vector && right.is_vector) {
+        left.vec_value -= right.vec_value;
+      } else if (left.is_matrix && right.is_matrix) {
+        left.mat_value -= right.mat_value;
+      } else if (!left.is_vector && !left.is_matrix && !right.is_vector &&
+                 !right.is_matrix) {
+        left.value -= right.value;
+      } else {
+        error("Invalid subtraction operands");
+      }
       break;
+    }
     default:
       ts.unget(t);
       return left;
@@ -559,69 +657,42 @@ Result expression() {
   }
 }
 
-Result declaration(bool is_const = false) {
+double declaration(bool is_const = false) {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-    Token t = ts.get();
-    if (t.kind != TokenKind::name) error("name expected in declaration");
-    string name = t.name;
-    if (is_declared(name)) error(name, " declared twice");
-    
-    Token t2 = ts.get();
-    if (t2.kind != TokenKind::assign) error("= missing in declaration of ", name);
-    
-    Result r = expression();
-    
-    // Store in symbol table based on result type
-    switch(r.type()) {
-        case Result::Type::SCALAR:
-            define_name(name, r.as_scalar(), is_const);
-            break;
-        case Result::Type::MATRIX:
-            define_matrix(name, r.as_matrix(), is_const);
-            break;
-        case Result::Type::VECTOR:
-            define_vector(name, r.as_vector(), is_const);
-            break;
-    }
-    
-    return r;
+  Token t = ts.get();
+  if (t.kind != TokenKind::name)
+    error("name expected in declaration");
+  string name = t.name;
+  if (is_declared(name))
+    error(name, " declared twice");
+  Token t2 = ts.get();
+  if (t2.kind != TokenKind::assign)
+    error("= missing in declaration of ", name);
+  Token result = expression();
+  define_name(name, result, is_const);
+  return result;
 }
 
-Result assignment() {
+double assignment() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
-    Token t = ts.get();
-    if (t.kind != TokenKind::name) error("name expected in assignment");
-    string name = t.name;
-    if (!is_declared(name)) error(name, " undeclared");
-    
-    Token t2 = ts.get();
-    if (t2.kind != TokenKind::assign) error("= missing in declaration of ", name);
-    
-    Result r = expression();
-    
-    // Handle different types of assignments based on Result type
-    Variable& var = names.at(name);
-    if (var.is_const) error("set: cannot update constant ", name);
-    
-    switch(r.type()) {
-        case Result::Type::SCALAR:
-            var.value = r.as_scalar();
-            break;
-        case Result::Type::MATRIX:
-            var.matrix_value = r.as_matrix();
-            break;
-        case Result::Type::VECTOR:
-            var.vector_value = r.as_vector();
-            break;
-    }
-    
-    return r;
+  Token t = ts.get();
+  if (t.kind != TokenKind::name)
+    error("name expected in assignment");
+  string name = t.name;
+  if (!is_declared(name))
+    error(name, " undeclared");
+  Token t2 = ts.get();
+  if (t2.kind != TokenKind::assign)
+    error("= missing in declaration of ", name);
+  double d = expression();
+  set_value(name, d);
+  return d;
 }
 
 // It wasn't entirely clear if env was a name for a particular env-file or a
@@ -638,7 +709,15 @@ void save_state() {
   ofstream file(name);
 
   for (const auto &[var_name, var] : names) {
-    file << var_name << " " << var.value << " " << var.is_const << "\n";
+    file << var_name << " ";
+    if (var.is_vector) {
+      file << "vector " << var.vec_value;
+    } else if (var.is_matrix) {
+      file << "matrix " << var.mat_value;
+    } else {
+      file << "scalar " << var.scalar_value;
+    }
+    file << " " << var.is_const << "\n";
   }
 
   file.close();
@@ -658,12 +737,23 @@ void load_state() {
   if (!file)
     error("cannot open file ", name);
 
-  string var_name;
-  double value;
+  string var_name, type;
   bool is_const;
 
-  while (file >> var_name >> value >> is_const) {
-    define_name(var_name, value, is_const);
+  while (file >> var_name >> type) {
+    if (type == "scalar") {
+      double value;
+      file >> value >> is_const;
+      define_name(var_name, value, is_const);
+    } else if (type == "vector") {
+      mat_lib::vector<double> vec;
+      file >> vec >> is_const;
+      define_name(var_name, vec, is_const);
+    } else if (type == "matrix") {
+      mat_lib::matrix<double> mat;
+      file >> mat >> is_const;
+      define_name(var_name, mat, is_const);
+    }
   }
 
   file.close();
@@ -698,87 +788,19 @@ void show_state() {
   file.close();
 }
 
-mat_lib::matrix<double> parse_matrix() {
-    Token t = ts.get();
-    if (t.kind != TokenKind::left_bracket) 
-        error("'[' expected");
-        
-    size_t rows = parse_number();
-    t = ts.get();
-    if (t.kind != TokenKind::x) 
-        error("'x' expected");
-    size_t cols = parse_number();
-    
-    t = ts.get();
-    if (t.kind != TokenKind::right_bracket) 
-        error("']' expected");
-        
-    t = ts.get();
-    if (t.kind != TokenKind::left_brace) 
-        error("'{' expected");
-        
-    vector<double> elements;
-    while (true) {
-        elements.push_back(expression());
-        t = ts.get();
-        if (t.kind == TokenKind::right_brace) break;
-        if (t.kind != TokenKind::comma) 
-            error("',' or '}' expected");
-    }
-    
-    if (elements.size() != rows * cols)
-        error("Wrong number of matrix elements");
-        
-    return mat_lib::matrix<double>(rows, cols, elements);
-}
-
-mat_lib::vector<double> parse_vector() {
-    Token t = ts.get();
-    if (t.kind != TokenKind::left_bracket) 
-        error("'[' expected");
-        
-    size_t size = parse_number();
-    
-    t = ts.get();
-    if (t.kind != TokenKind::right_bracket) 
-        error("']' expected");
-        
-    t = ts.get();
-    if (t.kind != TokenKind::left_brace) 
-        error("'{' expected");
-        
-    vector<double> elements;
-    while (true) {
-        elements.push_back(expression());
-        t = ts.get();
-        if (t.kind == TokenKind::right_brace) break;
-        if (t.kind != TokenKind::comma) 
-            error("',' or '}' expected");
-    }
-    
-    if (elements.size() != size)
-        error("Wrong number of vector elements");
-        
-    return mat_lib::vector<double>(elements);
-}
-
-Result statement() {
+Token statement() {
 #if DEBUG_FUNC
   cout << __func__ << std::endl;
 #endif // DEBUG_FUNC
 
   Token t = ts.get();
-
   switch (t.kind) {
   case TokenKind::let:
     return declaration();
-
   case TokenKind::constant:
     return declaration(true);
-
   case TokenKind::set:
     return assignment();
-
   default:
     ts.unget(t);
     return expression();
@@ -834,51 +856,6 @@ void calculate() {
       cerr << e.what() << endl;
       clean_up_mess();
     }
-}
-mat_lib::matrix<double> handle_matrix_operation() {
-    Token t = ts.get();
-    switch(t.kind) {
-        case TokenKind::times: {
-            Token next = ts.get();
-            if (next.kind == TokenKind::name) {
-                auto& var = names.at(next.name);
-                if (var.type == Variable::Type::MATRIX) {
-                    return matrix_value * var.matrix_value;
-                } else if (var.type == Variable::Type::VECTOR) {
-                    return matrix_value * var.vector_value;
-                }
-            }
-            error("Invalid matrix operation");
-        }
-        case TokenKind::transpose:
-            return ~matrix_value;
-        default:
-            error("Unknown matrix operation");
-    }
-}
-
-mat_lib::vector<double> handle_vector_operation() {
-    Token t = ts.get();
-    if (t.kind == TokenKind::name && t.name == "dot") {
-        Token next = ts.get();
-        if (next.kind != TokenKind::left_paren) 
-            error("'(' expected after dot");
-        
-        auto v1 = parse_vector();
-        
-        next = ts.get();
-        if (next.kind != TokenKind::comma)
-            error("',' expected between vectors");
-            
-        auto v2 = parse_vector();
-        
-        next = ts.get();
-        if (next.kind != TokenKind::right_paren)
-            error("')' expected");
-            
-        return mat_lib::dot(v1, v2);
-    }
-    error("Unknown vector operation");
 }
 
 int main() try {
