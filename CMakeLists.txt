@@ -10,6 +10,6 @@ include_directories(${PROJECT_SOURCE_DIR}/mat_libv2)
 
 # Add executable
 add_executable(calculator 
-    advanced_calculator.cpp
+    simple_calculator.cpp
 )
 
