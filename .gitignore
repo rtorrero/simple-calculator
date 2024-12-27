@@ -4,3 +4,4 @@
 *.pdf
 .clangd
 .vscode/
+build/

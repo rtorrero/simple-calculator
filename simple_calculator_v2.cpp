@@ -95,8 +95,12 @@
 #include <unordered_map>
 #include <functional>
 #include <cmath>
+#include "vector.hpp"
+#include "matrix.hpp"
 
 using namespace std;
+using matrix_t=mat_lib::matrix<double>;
+using vector_t=mat_lib::vector<double>;
 
 #define DEBUG_FUNC false
 
@@ -106,6 +110,126 @@ inline void error(const string& s)
 }
 
 inline void error(const string& s, const string& s2) { error(s+s2); }
+
+struct Value {
+    enum class Type { Number, Vector, Matrix };
+    Type type;
+    double number;
+    vector_t vector;
+    matrix_t matrix;
+    
+    Value(double d) : type(Type::Number), number(d) {}
+    Value(vector_t v) : type(Type::Vector), vector(v) {}
+    Value(matrix_t m) : type(Type::Matrix), matrix(m) {}
+};
+
+Value operator+(const Value& a, const Value& b) {
+    if (a.type == Value::Type::Number && b.type == Value::Type::Number)
+        return Value(a.number + b.number);
+    if (a.type == Value::Type::Vector && b.type == Value::Type::Vector)
+        return Value(a.vector + b.vector);
+    if (a.type == Value::Type::Matrix && b.type == Value::Type::Matrix)
+        return Value(a.matrix + b.matrix);
+    error("invalid operand types for +");
+}
+
+Value operator-(const Value& a, const Value& b) {
+    if (a.type == Value::Type::Number && b.type == Value::Type::Number)
+        return Value(a.number - b.number);
+    if (a.type == Value::Type::Vector && b.type == Value::Type::Vector)
+        return Value(a.vector - b.vector);
+    if (a.type == Value::Type::Matrix && b.type == Value::Type::Matrix)
+        return Value(a.matrix - b.matrix);
+    error("invalid operand types for -");
+}
+
+Value operator*(const Value& a, const Value& b) {
+    if (a.type == Value::Type::Number && b.type == Value::Type::Number)
+        return Value(a.number * b.number);
+    if (a.type == Value::Type::Vector && b.type == Value::Type::Number)
+        return Value(a.vector * b.number);
+    if (a.type == Value::Type::Number && b.type == Value::Type::Vector)
+        return Value(b.vector * a.number);
+    if (a.type == Value::Type::Matrix && b.type == Value::Type::Vector)
+        return Value(a.matrix * b.vector);
+    if (a.type == Value::Type::Matrix && b.type == Value::Type::Matrix)
+        return Value(a.matrix * b.matrix);
+    if (a.type == Value::Type::Vector && b.type == Value::Type::Vector)
+        return Value(dot(a.vector, b.vector));
+    error("invalid operand types for *");
+}
+
+Value operator/(const Value& a, const Value& b) {
+    if (a.type == Value::Type::Number && b.type == Value::Type::Number) {
+        if (b.number == 0) error("divide by zero");
+        return Value(a.number / b.number);
+    }
+    if (a.type == Value::Type::Vector && b.type == Value::Type::Number) {
+        if (b.number == 0) error("divide by zero");
+        return Value(a.vector / b.number);
+    }
+    error("invalid operand types for /");
+}
+
+Value operator%(const Value& a, const Value& b) {
+    if (a.type == Value::Type::Number && b.type == Value::Type::Number) {
+        if (b.number == 0) error("divide by zero");
+        return Value(fmod(a.number, b.number));
+    }
+    error("invalid operand types for %");
+}
+
+// Unary operators
+Value operator-(const Value& a) {
+    switch(a.type) {
+        case Value::Type::Number:
+            return Value(-a.number);
+        case Value::Type::Vector:
+            return Value(-a.vector);
+        case Value::Type::Matrix:
+            return Value(-a.matrix);
+    }
+    error("invalid operand type for unary -");
+}
+
+Value operator+(const Value& a) {
+    return a; // Unary plus just returns the value
+}
+
+// Comparison operators
+bool operator==(const Value& a, const Value& b) {
+    if (a.type != b.type) return false;
+    
+    switch(a.type) {
+        case Value::Type::Number:
+            return a.number == b.number;
+        case Value::Type::Vector:
+            return a.vector == b.vector;
+        case Value::Type::Matrix:
+            return a.matrix == b.matrix;
+    }
+    return false;
+}
+
+bool operator!=(const Value& a, const Value& b) {
+    return !(a == b);
+}
+
+// << operator for Value
+std::ostream& operator<<(std::ostream& os, const Value& v) {
+    switch(v.type) {
+        case Value::Type::Number:
+            os << v.number;
+            break;
+        case Value::Type::Vector:
+            os << v.vector;
+            break;
+        case Value::Type::Matrix:
+            os << v.matrix;
+            break;
+    }
+    return os;
+}
 
 void print_help()
 {
@@ -155,26 +279,26 @@ void print_help()
 enum class TokenKind {
   let, constant, set, help, quit, print, number, name, save, load, show,
   left_paren, right_paren, plus, minus, times, divide, mod, assign,
-  comma, unary_math_func, binary_math_func
+  comma, unary_math_func, binary_math_func, bracket_open, bracket_close,
+    braces_open, braces_close, vector_decl, matrix_decl
 };
 
-// Mapping of math functions that use a single argument
-std::unordered_map<std::string, std::function<double(double)>> unary_funcs = {
-    {"sin", static_cast<double(*)(double)>(std::sin)},
-    {"cos", static_cast<double(*)(double)>(std::cos)},
-    {"tan", static_cast<double(*)(double)>(std::tan)},
-    {"asin", static_cast<double(*)(double)>(std::asin)},
-    {"acos", static_cast<double(*)(double)>(std::acos)},
-    {"atan", static_cast<double(*)(double)>(std::atan)},
-    {"exp", static_cast<double(*)(double)>(std::exp)},
-    {"ln", static_cast<double(*)(double)>(std::log)},
-    {"log2", static_cast<double(*)(double)>(std::log2)},
-    {"log10", static_cast<double(*)(double)>(std::log10)},
+// Update the function maps to work with Value types
+std::unordered_map<std::string, std::function<Value(Value)>> unary_funcs = {
+    {"sin", [](Value v) { return Value(std::sin(v.number)); }},
+    {"cos", [](Value v) { return Value(std::cos(v.number)); }},
+    {"tan", [](Value v) { return Value(std::tan(v.number)); }},
+    {"asin", [](Value v) { return Value(std::asin(v.number)); }},
+    {"acos", [](Value v) { return Value(std::acos(v.number)); }},
+    {"atan", [](Value v) { return Value(std::atan(v.number)); }},
+    {"exp", [](Value v) { return Value(std::exp(v.number)); }},
+    {"ln", [](Value v) { return Value(std::log(v.number)); }},
+    {"log2", [](Value v) { return Value(std::log2(v.number)); }},
+    {"log10", [](Value v) { return Value(std::log10(v.number)); }}
 };
 
-// Mapping of math functions that use two arguments
-std::unordered_map<std::string, std::function<double(double, double)>> binary_funcs = {
-    {"pow", [](double x, double y) { return std::pow(x, y); }}
+std::unordered_map<std::string, std::function<Value(Value, Value)>> binary_funcs = {
+    {"pow", [](Value x, Value y) { return Value(std::pow(x.number, y.number)); }}
 };
 
 struct Token 
@@ -220,6 +344,10 @@ Token Token_stream::get()
     case '=': return Token(TokenKind::assign);
     case '%': return Token(TokenKind::mod);
     case ',': return Token(TokenKind::comma);
+    case '[': return Token(TokenKind::bracket_open);
+    case ']': return Token(TokenKind::bracket_close);
+    case '{': return Token(TokenKind::braces_open);
+    case '}': return Token(TokenKind::braces_close);
 
     case '.':
     case '0':
@@ -253,6 +381,8 @@ Token Token_stream::get()
         if (s == "save") return Token(TokenKind::save);
         if (s == "load") return Token(TokenKind::load);
         if (s == "show") return Token(TokenKind::show);
+        if (s == "vector") return Token(TokenKind::vector_decl);
+        if (s == "matrix") return Token(TokenKind::matrix_decl);
         if (unary_funcs.contains(s)) return Token(TokenKind::unary_math_func, s);
         if (binary_funcs.contains(s)) return Token(TokenKind::binary_math_func, s);
         return Token(TokenKind::name,s);
@@ -276,17 +406,16 @@ void Token_stream::ignore(TokenKind kind)
   }
 }
 
-struct Variable 
-{  
-  double value;
-  bool is_const;
-  Variable() :value(0), is_const(false) { }
-  Variable(double v, bool c=false) :value(v), is_const(c) { }
+struct Variable {
+    Value value;
+    bool is_const;
+    Variable() : value(0.0), is_const(false) {}
+    Variable(Value v, bool c=false) : value(v), is_const(c) {}
 };
 
 map<string, Variable> names;
 
-double get_value(string s)
+Value get_value(string s)
 {
     auto it = names.find(s);
     if (it == names.end()) {
@@ -296,7 +425,7 @@ double get_value(string s)
 }
 
 // set_value assumes the key exists
-void set_value(string s, double d)
+void set_value(string s, Value d)
 {
   Variable& var = names.at(s);
   if (var.is_const) {
@@ -312,16 +441,63 @@ bool is_declared(string s)
 }
 
 // define_name will overwrite a variable if it already exists
-void define_name(string s, double d, bool is_const)
+void define_name(string s, Value d, bool is_const)
 {
   names[s] = Variable(d, is_const);
 }
 
 Token_stream ts;
 
-double expression();
+Value expression();
 
-double primary()
+Value parse_vector() {
+    Token t = ts.get();
+    if (t.kind != TokenKind::bracket_open) error("[ expected after vector");
+    size_t dim = expression().number;
+    t = ts.get();
+    if (t.kind != TokenKind::bracket_close) error("] expected after dimension");
+    t = ts.get();
+    if (t.kind != TokenKind::braces_open) error("{ expected");
+    
+    vector_t result(dim);
+    for (size_t i = 0; i < dim; ++i) {
+        result[i] = expression().number;
+        t = ts.get();
+        if (i < dim-1 && t.kind != TokenKind::comma) error(", expected");
+    }
+    if (t.kind != TokenKind::braces_close) error("} expected");
+    return Value(result);
+}
+
+Value parse_matrix() {
+    Token t = ts.get();
+    if (t.kind != TokenKind::bracket_open) error("[ expected after matrix");
+    size_t rows = expression().number;
+    t = ts.get();
+    if (t.kind != TokenKind::times) error("x expected between dimensions");
+    size_t cols = expression().number;
+    t = ts.get();
+    if (t.kind != TokenKind::bracket_close) error("] expected after dimensions");
+    t = ts.get();
+    if (t.kind != TokenKind::braces_open) error("{ expected");
+    
+    matrix_t result(rows, cols);
+    for (size_t i = 0; i < rows; ++i) {
+        for (size_t j = 0; j < cols; ++j) {
+            result[i][j] = expression().number;
+            t = ts.get();
+            if (j < cols-1 && t.kind != TokenKind::comma) error(", expected");
+        }
+        if (i < rows-1) {
+            if (t.kind != TokenKind::print) error("; expected between rows");
+            t = ts.get();
+        }
+    }
+    if (t.kind != TokenKind::braces_close) error("} expected");
+    return Value(result);
+}
+
+Value primary()
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
@@ -332,86 +508,91 @@ double primary()
   {
     case TokenKind::left_paren:
     {	
-      double d = expression();
+      Value d = expression();
       t = ts.get();
       if (t.kind != TokenKind::right_paren) error("'(' expected");
       return d;
     }
     case TokenKind::minus:
-      return - primary();
+      return Value(-primary().number);
     case TokenKind::plus:
       return primary();
     case TokenKind::number:
       return t.value;
     case TokenKind::name:
       return get_value(t.name);
+    case TokenKind::vector_decl:
+      return parse_vector();
+    case TokenKind::matrix_decl:
+      return parse_matrix();
     case TokenKind::unary_math_func:
         {
+          string func_name = t.name;
           Token next = ts.get();
-          next = ts.get();
           if (next.kind != TokenKind::left_paren) 
               error("'(' expected after function name");
           
-          double arg = expression();
+          Value arg = expression();
           
           t = ts.get();
-          if (next.kind != TokenKind::right_paren) 
+          if (t.kind != TokenKind::right_paren) 
               error("')' expected");
           
-          return unary_funcs.at(t.name)(arg);
+          return unary_funcs.at(func_name)(arg);
         }
     case TokenKind::binary_math_func:
         {
+          string func_name = t.name;
           Token next = ts.get();
           if (next.kind != TokenKind::left_paren) 
               error("'(' expected after function name");
           
-          double arg1 = expression();
+          Value arg1 = expression();
           
           next = ts.get();
           if (next.kind != TokenKind::comma) 
               error("',' expected between arguments");
               
-          double arg2 = expression();
+          Value arg2 = expression();
           
           next = ts.get();
           if (next.kind != TokenKind::right_paren) 
               error("')' expected");
           
-          return binary_funcs.at(t.name)(arg1, arg2);
+          return binary_funcs.at(func_name)(arg1, arg2);
         }              
     default:
       error("primary expected");
   }
 }
 
-double term()
+Value term()
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
   #endif // DEBUG_FUNC
          
-  double left = primary();
+  Value left = primary();
   while(true) 
   {
     Token t = ts.get();
     switch(t.kind) 
     {
       case TokenKind::times:
-        left *= primary();
+        left = left * primary();
         break;
       case TokenKind::divide:
         {
-          double d = primary();
+          Value d = primary();
           if (d == 0) error("divide by zero");
-          left /= d;
+          left = left / primary();
           break;
         }
       case TokenKind::mod:
         {
-          double d = primary();
+          Value d = primary();
           if (d == 0) error("divide by zero");
-          left = fmod(left, d);
+          left = left % primary();
           break;
         }
       default:
@@ -421,23 +602,23 @@ double term()
   }
 }
 
-double expression()
+Value expression()
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
   #endif // DEBUG_FUNC
          
-  double left = term();
+  Value left = term();
   while(true) 
   {
     Token t = ts.get();
     switch(t.kind) 
     {
       case TokenKind::plus:
-        left += term();
+        left = left + term();
         break;
       case TokenKind::minus:
-        left -= term();
+        left = left - term();
         break;
       default:
         ts.unget(t);
@@ -446,7 +627,7 @@ double expression()
   }
 }
 
-double declaration(bool is_const=false)
+Value declaration(bool is_const=false)
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
@@ -458,12 +639,12 @@ double declaration(bool is_const=false)
   if (is_declared(name)) error(name, " declared twice");
   Token t2 = ts.get();
   if (t2.kind != TokenKind::assign) error("= missing in declaration of " ,name);
-  double d = expression();
+  Value d = expression();
   define_name(name,d,is_const);
   return d;
 }
 
-double assignment()
+Value assignment()
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
@@ -475,7 +656,7 @@ double assignment()
   if (!is_declared(name)) error(name, " undeclared");
   Token t2 = ts.get();
   if (t2.kind != TokenKind::assign) error("= missing in declaration of " ,name);
-  double d = expression();
+  Value d = expression();
   set_value(name,d);
   return d;
 }
@@ -552,7 +733,7 @@ void show_state()
   file.close();
 }
 
-double statement()
+Value statement()
 {
   #if DEBUG_FUNC
     cout<<__func__<<std::endl;
