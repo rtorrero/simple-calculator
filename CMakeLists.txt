@@ -13,6 +13,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 include_directories(${PROJECT_SOURCE_DIR}/mat_libv2)
 
 # Add executable
-add_executable(calculator 
+add_executable(simple_calculator_v2 
     simple_calculator_v2.cpp
 )

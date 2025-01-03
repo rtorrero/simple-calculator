@@ -150,6 +150,10 @@ Value operator*(const Value& a, const Value& b) {
         return Value(a.vector * b.number);
     if (a.type == Value::Type::Number && b.type == Value::Type::Vector)
         return Value(b.vector * a.number);
+    if (a.type == Value::Type::Matrix && b.type == Value::Type::Number)
+        return Value(a.matrix * b.number);
+    if (a.type == Value::Type::Number && b.type == Value::Type::Matrix)
+        return Value(b.matrix * a.number);
     if (a.type == Value::Type::Matrix && b.type == Value::Type::Vector)
         return Value(a.matrix * b.vector);
     if (a.type == Value::Type::Matrix && b.type == Value::Type::Matrix)
@@ -472,10 +476,21 @@ Value parse_vector() {
 Value parse_matrix() {
     Token t = ts.get();
     if (t.kind != TokenKind::bracket_open) error("[ expected after matrix");
-    size_t rows = expression().number;
+
+    // Get first number directly as rows
     t = ts.get();
-    if (t.kind != TokenKind::times) error("x expected between dimensions");
-    size_t cols = expression().number;
+    if (t.kind != TokenKind::number) error("number expected for rows");
+    size_t rows = t.value;
+    
+    // Check for dimension separator
+    t = ts.get();
+    if (t.kind != TokenKind::comma) error(", expected between dimensions");
+    
+    // Get second number directly as columns
+    t = ts.get();
+    if (t.kind != TokenKind::number) error("number expected for columns");
+    size_t cols = t.value;
+
     t = ts.get();
     if (t.kind != TokenKind::bracket_close) error("] expected after dimensions");
     t = ts.get();
@@ -488,9 +503,8 @@ Value parse_matrix() {
             t = ts.get();
             if (j < cols-1 && t.kind != TokenKind::comma) error(", expected");
         }
-        if (i < rows-1) {
-            if (t.kind != TokenKind::print) error("; expected between rows");
-            t = ts.get();
+        if (i < rows-1 && t.kind != TokenKind::print) {
+            error("; expected between rows");
         }
     }
     if (t.kind != TokenKind::braces_close) error("} expected");
