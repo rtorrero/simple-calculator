@@ -689,9 +689,26 @@ void save_state()
   ofstream file(name);
   
   for(const auto& [var_name, var] : names) {
-    file << var_name << " " << var.value << " " << var.is_const << "\n";
+    file << var_name << " " << (int)var.value.type << " " << var.is_const << " ";
+    switch(var.value.type) {
+      case Value::Type::Number:
+        file << var.value.number << "\n";
+        break;
+      case Value::Type::Vector:
+        file << var.value.vector.size() << " ";
+        for(size_t i = 0; i < var.value.vector.size(); i++)
+          file << var.value.vector[i] << " ";
+        file << "\n";
+        break;
+      case Value::Type::Matrix:
+        file << var.value.matrix.rows() << " " << var.value.matrix.columns() << " ";
+        for(size_t i = 0; i < var.value.matrix.rows(); i++)
+          for(size_t j = 0; j < var.value.matrix.columns(); j++)
+            file << var.value.matrix[i][j] << " ";
+        file << "\n";
+        break;
+    }
   }
-  
   file.close();
 }
 
@@ -709,13 +726,38 @@ void load_state()
   if (!file) error("cannot open file ", name);
   
   string var_name;
-  double value;
+  int type;
   bool is_const;
   
-  while (file >> var_name >> value >> is_const) {
-    define_name(var_name, value, is_const);
+  while (file >> var_name >> type >> is_const) {
+    switch((Value::Type)type) {
+      case Value::Type::Number: {
+        double value;
+        file >> value;
+        define_name(var_name, Value(value), is_const);
+        break;
+      }
+      case Value::Type::Vector: {
+        size_t size;
+        file >> size;
+        vector_t vec(size);
+        for(size_t i = 0; i < size; i++)
+          file >> vec[i];
+        define_name(var_name, Value(vec), is_const);
+        break;
+      }
+      case Value::Type::Matrix: {
+        size_t rows, cols;
+        file >> rows >> cols;
+        matrix_t mat(rows, cols);
+        for(size_t i = 0; i < rows; i++)
+          for(size_t j = 0; j < cols; j++)
+            file >> mat[i][j];
+        define_name(var_name, Value(mat), is_const);
+        break;
+      }
+    }
   }
-  
   file.close();
 }
 
@@ -733,17 +775,55 @@ void show_state()
   if (!file) error("cannot open file ", name);
   
   string var_name;
-  double value;
+  int type;
   bool is_const;
   
   cout << "Variables in environment '" << name << "':\n";
   cout << "----------------------------------------\n";
-  while (file >> var_name >> value >> is_const) {
-    cout << (is_const ? "const " : "let ") << var_name 
-         << " = " << value << "\n";
+  
+  while (file >> var_name >> type >> is_const) {
+    cout << (is_const ? "const " : "let ") << var_name << " = ";
+    
+    switch((Value::Type)type) {
+      case Value::Type::Number: {
+        double value;
+        file >> value;
+        cout << value;
+        break;
+      }
+      case Value::Type::Vector: {
+        size_t size;
+        file >> size;
+        cout << "vector[" << size << "]{";
+        for(size_t i = 0; i < size; i++) {
+          double val;
+          file >> val;
+          cout << val;
+          if (i < size-1) cout << ", ";
+        }
+        cout << "}";
+        break;
+      }
+      case Value::Type::Matrix: {
+        size_t rows, cols;
+        file >> rows >> cols;
+        cout << "matrix[" << rows << "," << cols << "]{";
+        for(size_t i = 0; i < rows; i++) {
+          for(size_t j = 0; j < cols; j++) {
+            double val;
+            file >> val;
+            cout << val;
+            if (j < cols-1) cout << ", ";
+          }
+          if (i < rows-1) cout << "; ";
+        }
+        cout << "}";
+        break;
+      }
+    }
+    cout << "\n";
   }
   cout << "----------------------------------------\n";
-  
   file.close();
 }
 
