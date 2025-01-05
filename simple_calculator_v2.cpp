@@ -58,9 +58,17 @@
     Function
     Number
     Name
+    Vector
+    Matrix
     ( Expression )
     - Primary
     + Primary
+
+  Vector:
+    vector[ Number ] { Expression , Expression , ... }
+
+  Matrix:
+    matrix [ Number , Number ] { Expression , ... ; Expression , ... }
 
   Function:
     FunctionName ( Expression )
@@ -273,6 +281,18 @@ void print_help()
   cout << "log10(x) - base 10 logarithm of x" << endl;
   cout << "log2(x) - base 2 logarithm of x" << endl;
   cout << "pow(x, y) - x raised to the power of y" << endl << endl;
+  cout << "Vector declaration: vector[size]{elements}" << endl;
+  cout << " Example: vector[3]{1, 2, 3};" << endl;
+  cout << "Matrix declaration: matrix[rows,cols]{elements separated by , and ;}" << endl;
+  cout << " Example: matrix[2,2]{1, 2; 3, 4};" << endl;
+  cout << "Vector / Matrix Operations supported:" << endl;
+  cout << "- Vector addition/subtraction: v1 + v2, v1 - v2" << endl;
+  cout << "- Vector scalar multiplication: v1 * 2, 2 * v1" << endl;
+  cout << "- Vector dot product: v1 * v2" << endl;
+  cout << "- Matrix addition/subtraction: m1 + m2, m1 - m2" << endl;
+  cout << "- Matrix scalar multiplication: m1 * 2, 2 * m1" << endl;
+  cout << "- Matrix-vector multiplication: m1 * v1" << endl;
+  cout << "- Matrix-matrix multiplication: m1 * m2" << endl << endl;
   cout << "Environment management:" << endl;
   cout << "save myenv; - saves all variables to file 'myenv'" << endl;
   cout << "load myenv; - loads all variables from file 'myenv'" << endl;
